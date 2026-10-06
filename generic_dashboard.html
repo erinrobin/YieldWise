@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMR Digital Twin — Operations Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #22263a;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --text: #e8eaf0;
+    --muted: #8b8fa8;
+    --green: #1D9E75;
+    --green-light: #5DCAA5;
+    --green-dim: #0F6E56;
+    --amber: #EF9F27;
+    --amber-dim: #BA7517;
+    --red: #E24B4A;
+    --red-dim: #A32D2D;
+    --blue: #378ADD;
+    --blue-dim: #185FA5;
+    --teal: #1D9E75;
+    --font: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* TOP BAR */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    height: 52px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .logo-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .logo-text { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+  .logo-sub { font-size: 12px; color: var(--muted); margin-left: 4px; }
+  .conn-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    background: rgba(29,158,117,0.12);
+    color: var(--green-light);
+    border: 1px solid rgba(29,158,117,0.25);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .conn-badge.disconnected {
+    background: rgba(226,75,74,0.12);
+    color: #f09595;
+    border-color: rgba(226,75,74,0.25);
+  }
+  .conn-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* LAYOUT */
+  .layout { display: grid; grid-template-columns: 260px 1fr 280px; gap: 0; height: calc(100vh - 52px); }
+
+  /* SIDEBAR */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 20px 16px;
+    display: flex; flex-direction: column; gap: 20px;
+    overflow-y: auto;
+  }
+  .sidebar-section-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  /* STATE CARDS */
+  .state-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .state-card-header { display: flex; align-items: center; justify-content: space-between; }
+  .state-label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
+  .state-value { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .state-sub { font-size: 11px; color: var(--muted); }
+
+  /* BATTERY BAR */
+  .battery-bar-track {
+    height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden;
+  }
+  .battery-bar-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 0.5s ease, background 0.3s;
+  }
+
+  /* STATUS PILL */
+  .mode-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .mode-FORWARD  { background: rgba(29,158,117,0.15); color: var(--green-light); border: 1px solid rgba(29,158,117,0.3); }
+  .mode-ROTATE   { background: rgba(55,138,221,0.15); color: #85B7EB; border: 1px solid rgba(55,138,221,0.3); }
+  .mode-RETURN_HOME { background: rgba(239,159,39,0.15); color: var(--amber); border: 1px solid rgba(239,159,39,0.3); }
+  .mode-ESTOP    { background: rgba(226,75,74,0.15); color: #F09595; border: 1px solid rgba(226,75,74,0.3); }
+  .mode-LOW_BAT  { background: rgba(239,159,39,0.15); color: var(--amber); border: 1px solid rgba(239,159,39,0.3); }
+  .mode-unknown  { background: rgba(139,143,168,0.15); color: var(--muted); border: 1px solid rgba(139,143,168,0.2); }
+
+  /* SENSOR HEALTH */
+  .health-OK       { color: var(--green-light); }
+  .health-DEGRADED { color: var(--amber); }
+  .health-FAILED   { color: var(--red); }
+
+  /* MAIN AREA */
+  .main { overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+
+  /* MAP */
+  .map-section {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 12px; letter-spacing: 0.03em; }
+  .map-container {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+    height: 260px;
+  }
+  #map-canvas { width: 100%; height: 100%; display: block; }
+
+  /* ZONE GRID */
+  .zone-section { padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .zone-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+  .zone-cell {
+    aspect-ratio: 1.4;
+    border-radius: 5px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 600;
+    cursor: default;
+    transition: all 0.4s;
+    position: relative;
+    border: 1px solid transparent;
+  }
+  .zone-cell .zone-id { opacity: 0.7; font-size: 8px; }
+  .zone-cell .zone-count { font-size: 13px; font-weight: 700; }
+  .zone-clear    { background: rgba(29,158,117,0.12); color: var(--green-light); border-color: rgba(29,158,117,0.2); }
+  .zone-low      { background: rgba(99,153,34,0.15); color: #97C459; border-color: rgba(99,153,34,0.25); }
+  .zone-moderate { background: rgba(239,159,39,0.15); color: var(--amber); border-color: rgba(239,159,39,0.25); }
+  .zone-high     { background: rgba(226,75,74,0.15); color: #f09595; border-color: rgba(226,75,74,0.25); animation: zone-alert 1.5s infinite; }
+  @keyframes zone-alert { 0%,100%{border-color:rgba(226,75,74,0.25)} 50%{border-color:rgba(226,75,74,0.6)} }
+
+  /* TOPIC LOG */
+  .log-section { padding: 16px 24px; flex: 1; }
+  .log-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    height: 160px; overflow-y: auto;
+    padding: 10px 12px;
+    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .log-entry { display: flex; gap: 8px; }
+  .log-ts { color: var(--muted); flex-shrink: 0; }
+  .log-dir-in  { color: var(--blue); flex-shrink: 0; }
+  .log-dir-out { color: var(--green); flex-shrink: 0; }
+  .log-topic { color: #AFA9EC; }
+  .log-val { color: var(--text); }
+
+  /* RIGHT PANEL */
+  .right-panel {
+    border-left: 1px solid var(--border);
+    padding: 20px 16px;
+    display: flex; flex-direction: column; gap: 20px;
+    overflow-y: auto;
+  }
+
+  /* CONTROLS */
+  .control-group { display: flex; flex-direction: column; gap: 8px; }
+  .ctrl-btn {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border2);
+    background: var(--bg2);
+    color: var(--text);
+    font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    width: 100%;
+    text-align: left;
+  }
+  .ctrl-btn:hover { background: var(--bg3); border-color: rgba(255,255,255,0.25); }
+  .ctrl-btn:active { transform: scale(0.98); }
+  .ctrl-btn.danger { border-color: rgba(226,75,74,0.4); color: #f09595; }
+  .ctrl-btn.danger:hover { background: rgba(226,75,74,0.1); }
+  .ctrl-btn.success { border-color: rgba(29,158,117,0.4); color: var(--green-light); }
+  .ctrl-btn.success:hover { background: rgba(29,158,117,0.1); }
+  .ctrl-btn.primary { border-color: rgba(55,138,221,0.4); color: #85B7EB; }
+  .ctrl-btn.primary:hover { background: rgba(55,138,221,0.1); }
+
+  /* ENVIRONMENT TOGGLE */
+  .env-toggle {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .env-btn {
+    padding: 9px; border-radius: 8px; border: 1px solid var(--border2);
+    background: var(--bg2); color: var(--muted);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    text-align: center; transition: all 0.15s;
+  }
+  .env-btn.active-clear { background: rgba(239,159,39,0.15); color: var(--amber); border-color: rgba(239,159,39,0.4); }
+  .env-btn.active-hazard { background: rgba(55,138,221,0.12); color: #85B7EB; border-color: rgba(55,138,221,0.3); }
+
+  /* DETECTION COUNTER */
+  .detection-counter {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .detection-icon { font-size: 24px; }
+  .detection-num { font-size: 28px; font-weight: 700; color: var(--amber); letter-spacing: -1px; }
+  .detection-label { font-size: 11px; color: var(--muted); }
+
+  /* ALERT BANNER */
+  .alert-banner {
+    background: rgba(226,75,74,0.12); border: 1px solid rgba(226,75,74,0.35);
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; font-weight: 500; color: #f09595;
+    display: none; align-items: center; gap: 8px;
+  }
+  .alert-banner.visible { display: flex; }
+
+  /* VELOCITY DISPLAY */
+  .vel-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .vel-box {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .vel-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+  .vel-val { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+  /* CONNECT MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 999; backdrop-filter: blur(4px);
+  }
+  .modal {
+    background: var(--bg2); border: 1px solid var(--border2);
+    border-radius: 14px; padding: 28px; width: 360px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .modal h2 { font-size: 16px; font-weight: 600; }
+  .modal p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .modal input {
+    width: 100%; padding: 9px 12px;
+    background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 7px; color: var(--text); font-size: 13px;
+    outline: none;
+  }
+  .modal input:focus { border-color: var(--blue); }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-ghost { padding: 8px 16px; border-radius: 7px; border: 1px solid var(--border2); background: none; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .btn-solid { padding: 8px 16px; border-radius: 7px; border: none; background: var(--blue-dim); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; }
+
+  /* OPERATIONAL INDICATOR */
+  .op-indicator {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: 8px;
+    font-size: 12px; font-weight: 600;
+    transition: all 0.3s;
+  }
+  .op-ok     { background: rgba(29,158,117,0.12); color: var(--green-light); border: 1px solid rgba(29,158,117,0.25); }
+  .op-estop  { background: rgba(226,75,74,0.15); color: #f09595; border: 1px solid rgba(226,75,74,0.4); animation: zone-alert 1s infinite; }
+  .op-dot    { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .divider { height: 1px; background: var(--border); }
+</style>
+</head>
+<body>
+
+<!-- CONNECT MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h2>Connect to ROS Bridge</h2>
+    <p>Enter the WebSocket address of your <code>rosbridge_server</code>. Run it with:<br><code>ros2 launch rosbridge_server rosbridge_websocket_launch.xml</code></p>
+    <input type="text" id="ros-url" value="ws://localhost:9090" placeholder="ws://localhost:9090" />
+    <div class="modal-btns">
+      <button class="btn-ghost" onclick="dismissModal()">Use Demo Mode</button>
+      <button class="btn-solid" onclick="connectROS()">Connect</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo-dot" id="live-dot"></div>
+    <span class="logo-text">AMR Operations</span>
+    <span class="logo-sub">Digital Twin Dashboard</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div id="op-indicator" class="op-indicator op-ok">
+      <div class="op-dot"></div>
+      <span id="op-label">Operational</span>
+    </div>
+    <div class="conn-badge disconnected" id="conn-badge" onclick="document.getElementById('modal').style.display='flex'">
+      <div class="conn-dot"></div>
+      <span id="conn-label">Disconnected</span>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="layout">
+
+  <!-- LEFT SIDEBAR — Robot State -->
+  <div class="sidebar">
+    <div>
+      <div class="sidebar-section-label">Robot State</div>
+
+      <!-- Battery -->
+      <div class="state-card" style="margin-bottom:10px;">
+        <div class="state-card-header">
+          <span class="state-label">Battery</span>
+          <span class="state-sub" id="bat-status-label">Normal</span>
+        </div>
+        <div class="state-value" id="battery-val">—%</div>
+        <div class="battery-bar-track">
+          <div class="battery-bar-fill" id="battery-bar" style="width:0%;background:var(--green)"></div>
+        </div>
+      </div>
+
+      <!-- Patrol Mode -->
+      <div class="state-card" style="margin-bottom:10px;">
+        <div class="state-label">Navigation Mode</div>
+        <div style="margin-top:4px;"><span class="mode-pill mode-unknown" id="mode-pill">UNKNOWN</span></div>
+        <div class="state-sub" id="mode-detail">Waiting for data...</div>
+      </div>
+
+      <!-- Sensor Health -->
+      <div class="state-card" style="margin-bottom:10px;">
+        <div class="state-card-header">
+          <span class="state-label">LiDAR Health</span>
+          <span class="state-value" style="font-size:16px;" id="sensor-icon">—</span>
+        </div>
+        <div class="state-value health-OK" id="sensor-val" style="font-size:16px;">—</div>
+      </div>
+
+      <!-- Velocity -->
+      <div class="sidebar-section-label" style="margin-top:4px;">Velocity</div>
+      <div class="vel-row">
+        <div class="vel-box">
+          <div class="vel-label">Linear</div>
+          <div class="vel-val" id="vel-lin">0.00</div>
+          <div class="state-sub">m/s</div>
+        </div>
+        <div class="vel-box">
+          <div class="vel-label">Angular</div>
+          <div class="vel-val" id="vel-ang">0.00</div>
+          <div class="state-sub">rad/s</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Position -->
+    <div>
+      <div class="sidebar-section-label">Position (Odometry)</div>
+      <div class="vel-row" style="margin-bottom:8px;">
+        <div class="vel-box">
+          <div class="vel-label">X</div>
+          <div class="vel-val" id="pos-x" style="font-size:15px;">0.00</div>
+        </div>
+        <div class="vel-box">
+          <div class="vel-label">Y</div>
+          <div class="vel-val" id="pos-y" style="font-size:15px;">0.00</div>
+        </div>
+      </div>
+      <div class="vel-box" style="width:100%;">
+        <div class="vel-label">Yaw (Heading)</div>
+        <div class="vel-val" id="pos-yaw" style="font-size:15px;">0.00°</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN COLUMN -->
+  <div class="main">
+
+    <!-- MAP -->
+    <div class="map-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <span class="section-title">Live Map — Trajectory Tracking</span>
+        <button class="ctrl-btn" style="width:auto;padding:5px 12px;font-size:12px;" onclick="clearTrail()">Clear Trail</button>
+      </div>
+      <div class="map-container">
+        <canvas id="map-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- ZONE GRID -->
+    <div class="zone-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span class="section-title">Spatial Grid Map (4 × 5)</span>
+        <div style="display:flex;gap:10px;font-size:11px;color:var(--muted);align-items:center;">
+          <span style="color:var(--green-light);">● Clear</span>
+          <span style="color:#97C459;">● Low</span>
+          <span style="color:var(--amber);">● Moderate</span>
+          <span style="color:#f09595;">● High</span>
+        </div>
+      </div>
+      <div class="zone-grid" id="zone-grid"></div>
+    </div>
+
+    <!-- ALERT -->
+    <div style="padding:0 24px 12px;">
+      <div class="alert-banner" id="alert-banner">
+        <span>⚠</span> Threshold Alert — 5+ detections registered in target sector
+      </div>
+    </div>
+
+    <!-- TOPIC LOG -->
+    <div class="log-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span class="section-title">ROS 2 Topic Monitor — Live Pub/Sub Activity</span>
+        <button class="ctrl-btn" style="width:auto;padding:4px 10px;font-size:11px;" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="log-box" id="log-box"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL — Controls -->
+  <div class="right-panel">
+
+    <!-- Detection count -->
+    <div>
+      <div class="sidebar-section-label">Detection Summary</div>
+      <div class="detection-counter">
+        <div class="detection-icon">📍</div>
+        <div>
+          <div class="detection-num" id="detection-count">0</div>
+          <div class="detection-label">Total Target Detections</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Environment control -->
+    <div>
+      <div class="sidebar-section-label">Environment Mode — Publish to /robot/environment</div>
+      <div class="env-toggle">
+        <button class="env-btn active-clear" id="btn-clear" onclick="setEnvironment('clear')">☀️ Normal</button>
+        <button class="env-btn" id="btn-hazard" onclick="setEnvironment('hazard')">🌧 Adverse</button>
+      </div>
+      <div class="state-sub" style="margin-top:6px;">Adverse → Reduces max speed + return to base</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Fault injection -->
+    <div>
+      <div class="sidebar-section-label">Fault Injection — Node Override</div>
+      <div class="control-group">
+        <button class="ctrl-btn danger" onclick="injectFault()">⚡ Trigger E-STOP</button>
+        <button class="ctrl-btn success" onclick="clearFault()">✓ Clear E-STOP</button>
+        <button class="ctrl-btn primary" onclick="injectLowBat()">🔋 Set Battery to 20%</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Manual cmd_vel -->
+    <div>
+      <div class="sidebar-section-label">Manual Velocity — Publish to /cmd_vel</div>
+      <div class="control-group">
+        <button class="ctrl-btn primary" onmousedown="sendVel(0.15,0)" onmouseup="sendVel(0,0)" ontouchstart="sendVel(0.15,0)" ontouchend="sendVel(0,0)">▲ Forward (Hold)</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <button class="ctrl-btn primary" onmousedown="sendVel(0,0.5)" onmouseup="sendVel(0,0)">◀ Left</button>
+          <button class="ctrl-btn primary" onmousedown="sendVel(0,-0.5)" onmouseup="sendVel(0,0)">▶ Right</button>
+        </div>
+        <button class="ctrl-btn danger" onmousedown="sendVel(-0.1,0)" onmouseup="sendVel(0,0)">▼ Reverse (Hold)</button>
+        <button class="ctrl-btn" onclick="sendVel(0,0)">■ Stop</button>
+        <button class="ctrl-btn success" onclick="releaseOverride()">▶ Resume Autonomous Mode</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Status message -->
+    <div>
+      <div class="sidebar-section-label">Navigation Status</div>
+      <div class="state-sub" id="navigation-status-text" style="font-size:12px;line-height:1.6;min-height:40px;">Waiting for /robot/status...</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────
+let ros = null;
+let demoMode = false;
+let trail = [];
+let zones = {};
+let currentEnv = 'clear';
+let simBattery = 100;
+let simMode = 'FORWARD';
+let demoTimer = null;
+
+// Publishers
+let pubManualOverride;
+let pubEnvironment, pubCmdVel, pubOperational, pubBattery;
+let paramClient;
+
+// ─── Zone grid init ──────────────────────────────────────────────────
+function initZones() {
+  const grid = document.getElementById('zone-grid');
+  grid.innerHTML = '';
+  for (let i = 1; i <= 20; i++) {
+    const id = 'ZONE' + String(i).padStart(3, '0');
+    zones[id] = 0;
+    const cell = document.createElement('div');
+    cell.className = 'zone-cell zone-clear';
+    cell.id = 'zone-' + id;
+    cell.innerHTML = `<div class="zone-id">${id}</div><div class="zone-count">0</div>`;
+    grid.appendChild(cell);
+  }
+}
+initZones();
+
+// ─── Map canvas ──────────────────────────────────────────────────────
+const canvas = document.getElementById('map-canvas');
+const ctx = canvas.getContext('2d');
+let robotX = 0, robotY = 0, robotYaw = 0;
+let mapScale = 40; // px per meter
+let mapOriginX, mapOriginY;
+
+function resizeCanvas() {
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  mapOriginX = canvas.width / 2;
+  mapOriginY = canvas.height / 2;
+  drawMap();
+}
+
+function worldToCanvas(wx, wy) {
+  return [
+    mapOriginX + wx * mapScale,
+    mapOriginY - wy * mapScale
+  ];
+}
+
+function drawMap() {
+  if (!canvas.width) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 0.5;
+  const step = mapScale;
+  for (let x = mapOriginX % step; x < canvas.width; x += step) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+  }
+  for (let y = mapOriginY % step; y < canvas.height; y += step) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(mapOriginX, 0); ctx.lineTo(mapOriginX, canvas.height); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, mapOriginY); ctx.lineTo(canvas.width, mapOriginY); ctx.stroke();
+
+  // Origin label
+  ctx.fillStyle = 'rgba(139,143,168,0.5)';
+  ctx.font = '10px monospace';
+  ctx.fillText('BASE', mapOriginX + 4, mapOriginY - 4);
+
+  // Trail
+  if (trail.length > 1) {
+    ctx.strokeStyle = 'rgba(29,158,117,0.35)';
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const [sx, sy] = worldToCanvas(trail[0][0], trail[0][1]);
+    ctx.moveTo(sx, sy);
+    for (let i = 1; i < trail.length; i++) {
+      const [px, py] = worldToCanvas(trail[i][0], trail[i][1]);
+      ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // Robot
+  const [rx, ry] = worldToCanvas(robotX, robotY);
+  ctx.save();
+  ctx.translate(rx, ry);
+  ctx.rotate(-robotYaw);
+  // Body
+  ctx.fillStyle = '#1D9E75';
+  ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
+  // Direction arrow
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(14, 0); ctx.stroke();
+  ctx.restore();
+
+  // Detection points
+  const allDetections = Object.values(targetDetections).flat();
+  for (const d of allDetections) {
+    const [dx, dy] = worldToCanvas(d[0], d[1]);
+    ctx.fillStyle = 'rgba(239,159,39,0.6)';
+    ctx.beginPath(); ctx.arc(dx, dy, 3, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+const targetDetections = {};
+
+window.addEventListener('resize', resizeCanvas);
+setTimeout(resizeCanvas, 100);
+
+function clearTrail() { trail = []; drawMap(); }
+
+// ─── Log ─────────────────────────────────────────────────────────────
+let logCount = 0;
+function addLog(dir, topic, val) {
+  const box = document.getElementById('log-box');
+  const ts = new Date().toLocaleTimeString('en-US', {hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  const dirClass = dir === 'IN' ? 'log-dir-in' : 'log-dir-out';
+  const arrow = dir === 'IN' ? '◀ IN ' : '▶ OUT';
+  entry.innerHTML = `<span class="log-ts">${ts}</span><span class="${dirClass}">${arrow}</span><span class="log-topic">${topic}</span><span class="log-val"> ${val}</span>`;
+  box.appendChild(entry);
+  logCount++;
+  if (logCount > 200) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+function clearLog() { document.getElementById('log-box').innerHTML = ''; logCount = 0; }
+
+// ─── UI Updates ───────────────────────────────────────────────────────
+function updateBattery(pct) {
+  const p = parseFloat(pct).toFixed(1);
+  document.getElementById('battery-val').textContent = p + '%';
+  const bar = document.getElementById('battery-bar');
+  bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  if (pct < 5)       { bar.style.background = 'var(--red)'; document.getElementById('bat-status-label').textContent = 'Critical'; }
+  else if (pct < 15) { bar.style.background = 'var(--amber)'; document.getElementById('bat-status-label').textContent = 'Low'; }
+  else if (pct < 75) { bar.style.background = 'var(--amber-dim)'; document.getElementById('bat-status-label').textContent = 'Normal'; }
+  else               { bar.style.background = 'var(--green)'; document.getElementById('bat-status-label').textContent = 'Good'; }
+}
+
+function updateMode(mode) {
+  const pill = document.getElementById('mode-pill');
+  const detail = document.getElementById('mode-detail');
+  const cleanMode = mode.replace(/_LOW_BAT$/, '');
+  pill.className = 'mode-pill mode-' + cleanMode;
+  pill.textContent = mode;
+  const desc = {
+    FORWARD: 'Navigating waypoint path',
+    ROTATE: 'Obstacle avoidance active',
+    RETURN_HOME: 'Returning to base location',
+    ESTOP: 'Emergency stop activated',
+    LOW_BAT: 'Low power state — throttle reduced'
+  };
+  detail.textContent = desc[cleanMode] || mode;
+}
+
+function updateOperational(ok) {
+  const ind = document.getElementById('op-indicator');
+  const lbl = document.getElementById('op-label');
+  if (ok) {
+    ind.className = 'op-indicator op-ok';
+    lbl.textContent = 'Operational';
+  } else {
+    ind.className = 'op-indicator op-estop';
+    lbl.textContent = 'E-STOP';
+  }
+}
+
+function updateSensorHealth(h) {
+  const el = document.getElementById('sensor-val');
+  const ic = document.getElementById('sensor-icon');
+  el.className = 'state-value health-' + h;
+  el.textContent = h;
+  ic.textContent = h === 'OK' ? '✓' : h === 'DEGRADED' ? '⚠' : '✕';
+}
+
+function updateZone(zoneId, count) {
+  zones[zoneId] = count;
+  const cell = document.getElementById('zone-' + zoneId);
+  if (!cell) return;
+  cell.querySelector('.zone-count').textContent = count;
+  if (count === 0)      cell.className = 'zone-cell zone-clear';
+  else if (count === 1) cell.className = 'zone-cell zone-low';
+  else if (count < 5)   cell.className = 'zone-cell zone-moderate';
+  else                  cell.className = 'zone-cell zone-high';
+}
+
+function updatePosition(x, y, yaw) {
+  robotX = x; robotY = y; robotYaw = yaw;
+  trail.push([x, y]);
+  if (trail.length > 500) trail.shift();
+  document.getElementById('pos-x').textContent = x.toFixed(2);
+  document.getElementById('pos-y').textContent = y.toFixed(2);
+  document.getElementById('pos-yaw').textContent = (yaw * 180 / Math.PI).toFixed(1) + '°';
+  drawMap();
+}
+
+function updateVelocity(lin, ang) {
+  document.getElementById('vel-lin').textContent = lin.toFixed(2);
+  document.getElementById('vel-ang').textContent = ang.toFixed(2);
+}
+
+// ─── ROS Connection ───────────────────────────────────────────────────
+function connectROS() {
+  const url = document.getElementById('ros-url').value.trim();
+  document.getElementById('modal').style.display = 'none';
+
+  ros = new ROSLIB.Ros({ url });
+
+  ros.on('connection', () => {
+    document.getElementById('conn-badge').className = 'conn-badge';
+    document.getElementById('conn-label').textContent = 'Connected';
+    addLog('IN', '/rosbridge', 'Connected to ' + url);
+    setupTopics();
+  });
+
+  ros.on('error', (e) => {
+    document.getElementById('conn-badge').className = 'conn-badge disconnected';
+    document.getElementById('conn-label').textContent = 'Error';
+    addLog('IN', '/rosbridge', 'Connection error — check rosbridge_server');
+  });
+
+  ros.on('close', () => {
+    document.getElementById('conn-badge').className = 'conn-badge disconnected';
+    document.getElementById('conn-label').textContent = 'Disconnected';
+  });
+}
+
+function setupTopics() {
+  // ── Subscribers (Generic Topics) ──────────────────────────────────
+  sub('/robot/battery_pct', 'std_msgs/Float32', (m) => {
+    updateBattery(m.data);
+    addLog('IN', '/robot/battery_pct', m.data.toFixed(1) + '%');
+  });
+
+  sub('/robot/mode', 'std_msgs/String', (m) => {
+    updateMode(m.data);
+    addLog('IN', '/robot/mode', m.data);
+  });
+
+  sub('/robot/sensor_health', 'std_msgs/String', (m) => {
+    updateSensorHealth(m.data);
+    addLog('IN', '/robot/sensor_health', m.data);
+  });
+
+  sub('/robot/operational', 'std_msgs/Bool', (m) => {
+    updateOperational(m.data);
+    addLog('IN', '/robot/operational', m.data ? 'true' : 'false');
+  });
+
+  sub('/robot/status', 'std_msgs/String', (m) => {
+    document.getElementById('navigation-status-text').textContent = m.data;
+    addLog('IN', '/robot/status', m.data);
+  });
+
+  sub('/robot/detection_count', 'std_msgs/Int32', (m) => {
+    document.getElementById('detection-count').textContent = m.data;
+    addLog('IN', '/robot/detection_count', m.data);
+  });
+
+  sub('/robot/zone_summary', 'std_msgs/String', (m) => {
+    const parts = m.data.split(' | ');
+    parts.forEach(part => {
+      // format: ZONE001:3
+      const match = part.match(/^(ZONE\d+):(\d+)/);
+      if (match) {
+        updateZone(match[1], parseInt(match[2]));
+      }
+    });
+    addLog('IN', '/robot/zone_summary', m.data.substring(0, 60) + '...');
+  });
+
+  sub('/robot/alert', 'std_msgs/Bool', (m) => {
+    document.getElementById('alert-banner').className = m.data ? 'alert-banner visible' : 'alert-banner';
+  });
+
+  sub('/odom', 'nav_msgs/Odometry', (m) => {
+    const p = m.pose.pose.position;
+    const q = m.pose.pose.orientation;
+    const yaw = Math.atan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y*q.y + q.z*q.z));
+    updatePosition(p.x, p.y, yaw);
+  }, 10);
+
+  sub('/cmd_vel', 'geometry_msgs/Twist', (m) => {
+    updateVelocity(m.linear.x, m.angular.z);
+    addLog('OUT', '/cmd_vel', `lin=${m.linear.x.toFixed(2)} ang=${m.angular.z.toFixed(2)}`);
+  });
+
+  sub('/robot/target_detected', 'geometry_msgs/PointStamped', (m) => {
+    const x = m.point.x, y = m.point.y;
+    if (!targetDetections['all']) targetDetections['all'] = [];
+    targetDetections['all'].push([x, y]);
+    if (targetDetections['all'].length > 100) targetDetections['all'].shift();
+    drawMap();
+    addLog('IN', '/robot/target_detected', `x=${x.toFixed(2)} y=${y.toFixed(2)}`);
+  });
+
+  paramClient = new ROSLIB.Service({
+    ros: ros,
+    name: '/amr_core_node/set_parameters',
+    serviceType: 'rcl_interfaces/srv/SetParameters'
+  });  
+
+  // ── Publishers ────────────────────────────────────────────────────
+  pubEnvironment    = pub('/robot/environment',           'std_msgs/String');
+  pubCmdVel         = pub('/cmd_vel',                     'geometry_msgs/Twist');
+  pubOperational    = pub('/robot/operational',           'std_msgs/Bool');
+  pubBattery        = pub('/robot/battery_pct',           'std_msgs/Float32');
+  pubManualOverride = pub('/robot/manual_override',       'std_msgs/Bool');
+}
+
+function sub(topic, type, cb, throttle) {
+  const t = new ROSLIB.Topic({ ros, name: topic, messageType: type, throttle_rate: throttle || 0 });
+  t.subscribe(cb);
+}
+
+function pub(topic, type) {
+  return new ROSLIB.Topic({ ros, name: topic, messageType: type });
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────
+function setEnvironment(env) {
+  currentEnv = env;
+  document.getElementById('btn-clear').className = env === 'clear' ? 'env-btn active-clear' : 'env-btn';
+  document.getElementById('btn-hazard').className = env === 'hazard' ? 'env-btn active-hazard' : 'env-btn';
+  const msg = new ROSLIB.Message({ data: env });
+  if (pubEnvironment) { pubEnvironment.publish(msg); }
+  addLog('OUT', '/robot/environment', env);
+}
+
+function sendVel(lin, ang) {
+  const msg = new ROSLIB.Message({ linear: {x: lin, y: 0, z: 0}, angular: {x: 0, y: 0, z: ang} });
+  if (pubCmdVel) pubCmdVel.publish(msg);
+  updateVelocity(lin, ang);
+  addLog('OUT', '/cmd_vel', `lin=${lin.toFixed(2)} ang=${ang.toFixed(2)}`);
+}
+
+function injectLowBat() {
+  setROSParam('battery_pct_override', 20.0);
+  updateBattery(20);
+  setTimeout(() => {
+    setROSParam('battery_pct_override', -1.0);
+    addLog('OUT', '/amr_core_node/set_parameters', 'battery_pct_override cleared — draining from 20%');
+  }, 1000);
+}
+
+function clearBatteryOverride() {
+  setROSParam('battery_pct_override', -1.0);
+}
+
+// ─── Demo Mode ────────────────────────────────────────────────────────
+function dismissModal() {
+  document.getElementById('modal').style.display = 'none';
+  demoMode = true;
+  document.getElementById('conn-badge').className = 'conn-badge';
+  document.getElementById('conn-label').textContent = 'Demo Mode';
+  addLog('IN', '/demo', 'Running in standalone demo mode — no ROS connection');
+  startDemo();
+}
+
+function startDemo() {
+  let t = 0;
+  let bat = 95;
+  let mode = 'FORWARD';
+  const modes = ['FORWARD','FORWARD','FORWARD','ROTATE','FORWARD','RETURN_HOME'];
+  let modeIdx = 0;
+  updateSensorHealth('OK');
+  updateOperational(true);
+
+  // Populate some zones
+  const zoneIds = Object.keys(zones);
+  const demoDetections = [[0,3,'ZONE003'],[2,8,'ZONE009'],[5,2,'ZONE002'],[3,12,'ZONE013']];
+  for (const [count, , id] of demoDetections) updateZone(id, count);
+
+  demoTimer = setInterval(() => {
+    t += 0.1;
+    bat = Math.max(0, bat - 0.04);
+    updateBattery(bat);
+
+    if (t % 5 < 0.15) {
+      modeIdx = (modeIdx + 1) % modes.length;
+      mode = modes[modeIdx];
+      updateMode(mode);
+      addLog('IN', '/robot/mode', mode);
+    }
+
+    const lin = mode === 'FORWARD' ? 0.15 : mode === 'ROTATE' ? 0 : 0.10;
+    const ang = mode === 'ROTATE' ? 0.5 : 0;
+    updateVelocity(lin, ang);
+
+    const x = Math.sin(t * 0.3) * 1.5;
+    const y = t * 0.04 % 3 - 1.5;
+    const yaw = Math.atan2(Math.cos(t * 0.3) * 0.45, 0.04);
+    updatePosition(x, y, yaw);
+
+    if (t % 3 < 0.15) addLog('IN', '/robot/battery_pct', bat.toFixed(1) + '%');
+    if (t % 7 < 0.15) {
+      const count = Math.floor(t / 7) % 6;
+      const zid = zoneIds[Math.floor(t / 7) % zoneIds.length];
+      updateZone(zid, count);
+      addLog('IN', '/robot/target_detected', `zone=${zid} count=${count}`);
+      document.getElementById('detection-count').textContent = Math.floor(t / 7) + 4;
+    }
+
+    const h = bat < 5 ? 'FAILED' : bat < 30 ? 'DEGRADED' : 'OK';
+    updateSensorHealth(h);
+    if (bat < 5) updateOperational(false);
+
+    if (t % 8 < 0.15) {
+      const statuses = ['NAV: Scanning route', 'NAV: Obstacle detected, re-routing', 'NAV: Clear path ahead', 'RETURN_HOME: Returning to base point'];
+      document.getElementById('navigation-status-text').textContent = statuses[Math.floor(t/8) % statuses.length];
+      addLog('IN', '/robot/status', document.getElementById('navigation-status-text').textContent);
+    }
+  }, 100);
+}
+
+function releaseOverride() {
+  if (pubManualOverride) pubManualOverride.publish(new ROSLIB.Message({ data: false }));
+  sendVel(0, 0);
+  addLog('OUT', '/robot/manual_override', 'released');
+}
+
+function setROSParam(name, value) {
+  const request = new ROSLIB.ServiceRequest({
+    parameters: [{
+      name: name,
+      value: {
+        type: 3,        // 3 = double
+        double_value: value
+      }
+    }]
+  });
+  paramClient.callService(request, (result) => {
+    addLog('OUT', '/amr_core_node/set_parameters', `${name}=${value}`);
+  });
+}
+
+function setROSParamBool(name, value) {
+  const request = new ROSLIB.ServiceRequest({
+    parameters: [{
+      name: name,
+      value: { type: 1, bool_value: value }
+    }]
+  });
+  paramClient.callService(request, () => {
+    addLog('OUT', '/amr_core_node/set_parameters', `${name}=${value}`);
+  });
+}
+
+function injectFault() {
+  setROSParamBool('fault_override', true);
+  updateOperational(false);
+}
+
+function clearFault() {
+  setROSParamBool('fault_override', false);
+  updateOperational(true);
+}
+
+// Initial map draw
+setTimeout(drawMap, 200);
+</script>
+</body>
+</html>
